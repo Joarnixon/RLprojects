@@ -2,6 +2,7 @@ import pickle
 import random
 import numpy as np
 import gymnasium as gym
+from itertools import count
 
 random.seed(18)
 
@@ -18,7 +19,7 @@ class SemiGradientSarsa(object):
         self.env = env
         
         # define weight vector
-        self.w = np.random.uniform(low=-0.05, high=0.05, size=(n_tilings**4,))
+        self.w = np.zeros(n_tilings**4)
 
         # hash for tile coding
         self.tile_coding = IHT(n_tilings**4)
@@ -26,40 +27,67 @@ class SemiGradientSarsa(object):
     def q(self, feature_vector):
         return np.dot(self.w, feature_vector)
 
-    def train(self):
+    def train(self, n):
         episodes = 0
-        total_reward = 0
-        state, info = self.env.reset()
-        action = self.select_action(state)
+        best_reward = -10000000
         print("Started training")
+        history = []
         while episodes < self.num_eps:
-            feature_vector = self.hash_feature_vector(state, action)
+            actions_store = []
+            states_store = []
+            rewards_store = []
 
-            next_state, reward, terminated, trunctated, _info = self.env.step(action)
-            
-            total_reward += reward
+            total_reward = 0
+            state, info = self.env.reset()
+            action = self.select_action(state)
 
-            if terminated:
-                self.update_weight_terminal(reward, feature_vector)
-                state, info = self.env.reset()
-                action = self.select_action(state)
-                if episodes % 50 == 0:
-                    print("episode:", episodes, 'completed', 'reward:', total_reward)
-                total_reward = 0
-                episodes += 1
-                continue
+            actions_store += [action]
+            states_store += [state]
 
-            next_action = self.select_action(next_state)
-            self.update_weight(reward, self.hash_feature_vector(next_state, next_action), feature_vector)
-            
-            state = next_state
-            action = next_action
-        print('Saving')
-        self.save_params()
+            for t in count(0, 1):
+                feature_vector = self.hash_feature_vector(state, action)
 
-    def update_weight(self, reward, feature_vector_next, feature_vector):
-        self.w += self.alpha * (reward + self.gamma * self.q(feature_vector_next) - self.q(feature_vector)) * feature_vector
-        return
+                next_state, reward, terminated, trunctated, _info = self.env.step(action)
+                
+                states_store += [next_state]
+                rewards_store += [reward]
+
+                total_reward += reward
+
+                if terminated:
+                    self.update_weight_terminal(reward, feature_vector)
+                    history += [total_reward]
+                    if episodes % 2 == 0:
+                        print("episode:", episodes, 'completed', 'reward:', total_reward)
+                    if total_reward > best_reward:
+                        self.save_params()
+                        best_reward = total_reward
+
+                    episodes += 1
+                    break
+
+                next_action = self.select_action(next_state)
+                actions_store += [next_action]
+
+                state = next_state
+                action = next_action
+
+                tau = t - n + 1
+                if tau >= 0:
+                    self.update_weight(tau, n, states_store, actions_store, rewards_store)
+        print('Best achieved and saved:', best_reward)
+                
+        return history
+                
+
+        print('Best reward achieved:', best_reward)
+    
+    def update_weight(self, tau, n, store_states, store_actions, store_rewards):
+        # print(len(store_rewards), len(store_actions), len(store_states), tau+n+1, tau)
+        G = sum(self.gamma**(i - tau - 1) * store_rewards[i-1] for i in range(tau+1, tau+n+1))
+        G += self.gamma ** n * self.q(self.hash_feature_vector(store_states[tau + n], store_actions[tau + n]))
+
+        self.w += self.alpha * (G - self.q(self.hash_feature_vector(store_states[tau], store_actions[tau]))) * self.hash_feature_vector(store_states[tau], store_actions[tau])
 
     def update_weight_terminal(self, reward, feature_vector):
         self.w += self.alpha * (reward - self.q(feature_vector)) * feature_vector
