@@ -2,4 +2,4 @@
 
 ### Results:
 
-![text](after_training.mp4)
+![gif](after_training.gif)
