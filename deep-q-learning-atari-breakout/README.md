@@ -5,3 +5,6 @@
 
 ### This is a lot better. It learned to move chaotically to hit the ball more.
 ![gif2](after_training%20-%202024-06-08T014919.530.gif)
+
+### (Probably) the last version. Further improvement requires too much time and effort.
+![gif3](after_training%20-%202024-06-08T145709.705.gif)
